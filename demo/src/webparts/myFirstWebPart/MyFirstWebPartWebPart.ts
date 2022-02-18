@@ -11,6 +11,10 @@ import { escape } from "@microsoft/sp-lodash-subset";
 
 import styles from "./MyFirstWebPartWebPart.module.scss";
 import * as strings from "MyFirstWebPartWebPartStrings";
+import MockHttpClient from "./MockHttpClient";
+
+import { SPHttpClient, SPHttpClientResponse } from "@microsoft/sp-http";
+import { Environment, EnvironmentType } from "@microsoft/sp-core-library";
 
 export interface IMyFirstWebPartWebPartProps {
   description: string;
@@ -20,7 +24,67 @@ export interface IMyFirstWebPartWebPartProps {
   test3: boolean;
 }
 
+export interface ISPLists {
+  value: ISPList[];
+}
+
+export interface ISPList {
+  Title: string;
+  Id: string;
+}
+
 export default class MyFirstWebPartWebPart extends BaseClientSideWebPart<IMyFirstWebPartWebPartProps> {
+  private _renderListAsync(): void {
+    // Local environment
+    if (Environment.type === EnvironmentType.Local) {
+      this._getMockListData().then((response) => {
+        this._renderList(response.value);
+      });
+    } else if (
+      Environment.type == EnvironmentType.SharePoint ||
+      Environment.type == EnvironmentType.ClassicSharePoint
+    ) {
+      this._getListData().then((response) => {
+        // this._getListData().then((response) => {
+        this._renderList(response.value);
+      });
+    }
+  }
+
+  private _renderList(items: ISPList[]): void {
+    let html: string = "";
+    items.forEach((item: ISPList) => {
+      html += `<ul class="${styles.list}">
+                <li class="${styles.listItem}">
+                  <span class="ms-font-1">${item.Title}</span>
+                </li>
+              </ul>`;
+    });
+
+    const listContainer: Element =
+      this.domElement.querySelector("#spListContainer");
+    listContainer.innerHTML = html;
+  }
+
+  private _getListData(): Promise<ISPLists> {
+    return this.context.spHttpClient
+      .get(
+        this.context.pageContext.web.absoluteUrl +
+          `/_api/web/lists?$filter=Hidden eq false`,
+        SPHttpClient.configurations.v1
+      )
+      .then((response: SPHttpClientResponse) => {
+        return response.json();
+      });
+  }
+
+  private _getMockListData(): Promise<ISPLists> {
+    return MockHttpClient.get().then((date: ISPList[]) => {
+      var listData: ISPLists = { value: date };
+      return listData;
+    }) as Promise<ISPLists>;
+  }
+
   public render(): void {
     this.domElement.innerHTML = `
       <div class="${styles.myFirstWebPart}">
@@ -35,13 +99,20 @@ export default class MyFirstWebPartWebPart extends BaseClientSideWebPart<IMyFirs
               <p class="${styles.description}">${escape(
       this.properties.description
     )}</p>
+    <p class="${styles.description}">${escape(this.properties.test)}</p>
+    <p class="${styles.description}">${escape(
+      this.context.pageContext.web.title
+    )}</p>
               <a href="https://aka.ms/spfx" class="${styles.button}">
                 <span class="${styles.label}">Learn more</span>
               </a>
             </div>
           </div>
+          <div id="spListContainer" />
         </div>
       </div>`;
+
+    this._renderListAsync();
   }
 
   protected get dataVersion(): Version {
